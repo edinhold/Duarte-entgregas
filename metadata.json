@@ -1,0 +1,7 @@
+{
+  "name": "Duarte Entregas - Sistema de Transporte Multimodal",
+  "description": "Uma plataforma sofisticada de entregas e transporte com painéis especializados para Admins, Entregadores e Clientes, incluindo rastreamento em tempo real e gestão financeira.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}
