@@ -3,5 +3,8 @@
   "description": "Uma plataforma sofisticada de entregas e transporte com painéis especializados para Admins, Entregadores e Clientes, incluindo rastreamento em tempo real e gestão financeira.",
   "requestFramePermissions": [
     "geolocation"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
   ]
 }

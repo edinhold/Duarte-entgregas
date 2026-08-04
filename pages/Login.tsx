@@ -11,6 +11,7 @@ interface LoginProps {
 const Login: React.FC<LoginProps> = ({ onLogin, onRegister, onGoToAdmin }) => {
   const [isRegistering, setIsRegistering] = useState(false);
   const [role, setRole] = useState<UserRole>(UserRole.RIDER);
+  const [avatar, setAvatar] = useState<string>('');
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -20,6 +21,21 @@ const Login: React.FC<LoginProps> = ({ onLogin, onRegister, onGoToAdmin }) => {
     vehicleModel: '',
     vehicleType: VehicleType.CAR
   });
+
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (!file.type.startsWith('image/')) {
+        alert('Por favor, selecione uma imagem no formato PNG ou JPG.');
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = () => {
+        setAvatar(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -35,6 +51,10 @@ const Login: React.FC<LoginProps> = ({ onLogin, onRegister, onGoToAdmin }) => {
           alert("Atenção: Placa e modelo do veículo são obrigatórios para o cadastro de motoristas.");
           return;
         }
+        if (!avatar) {
+          alert("Atenção: A foto do motorista é OBRIGATÓRIA para concluir o cadastro.");
+          return;
+        }
       }
       
       onRegister({ 
@@ -44,6 +64,7 @@ const Login: React.FC<LoginProps> = ({ onLogin, onRegister, onGoToAdmin }) => {
         licensePlate: role === UserRole.DRIVER ? formData.licensePlate : undefined,
         vehicleModel: role === UserRole.DRIVER ? formData.vehicleModel : undefined,
         vehicleType: role === UserRole.DRIVER ? formData.vehicleType : undefined,
+        avatar: avatar || `https://picsum.photos/seed/${formData.email}/200`,
         role 
       });
     } else {
@@ -74,8 +95,8 @@ const Login: React.FC<LoginProps> = ({ onLogin, onRegister, onGoToAdmin }) => {
         <form onSubmit={handleSubmit} className="p-10 space-y-6">
           <div className="grid grid-cols-2 gap-2 p-1.5 bg-slate-100 rounded-2xl mb-4">
             {[
-              { id: UserRole.RIDER, label: 'Passageiro', icon: 'fa-user' },
-              { id: UserRole.DRIVER, label: 'Motorista', icon: 'fa-car' }
+              { id: UserRole.RIDER, label: 'Lojista', icon: 'fa-store' },
+              { id: UserRole.DRIVER, label: 'Motorista', icon: 'fa-motorcycle' }
             ].map(r => (
               <button
                 key={r.id}
@@ -91,9 +112,65 @@ const Login: React.FC<LoginProps> = ({ onLogin, onRegister, onGoToAdmin }) => {
 
           <div className="space-y-4">
             {isRegistering && (
-              <div>
-                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Nome Completo *</label>
-                <input required type="text" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full px-6 py-4 bg-slate-50 border-2 border-slate-50 rounded-2xl focus:border-indigo-600 outline-none transition-all font-bold" placeholder="Seu Nome" />
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">
+                    {role === UserRole.RIDER ? 'Nome da Loja / Razão Social *' : 'Nome Completo *'}
+                  </label>
+                  <input required type="text" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full px-6 py-4 bg-slate-50 border-2 border-slate-50 rounded-2xl focus:border-indigo-600 outline-none transition-all font-bold" placeholder={role === UserRole.RIDER ? "Ex: Mercado Duarte ou João Silva" : "Seu Nome Completo"} />
+                </div>
+
+                {/* Upload de Logo (Lojista) ou Foto de Perfil (Motorista) */}
+                <div className={`p-4 rounded-2xl border-2 border-dashed ${role === UserRole.DRIVER && !avatar ? 'bg-amber-50/60 border-amber-300' : 'bg-slate-50 border-slate-200'}`}>
+                  <div className="flex justify-between items-center mb-2">
+                    <label className="block text-[10px] font-black uppercase tracking-widest text-slate-600">
+                      {role === UserRole.RIDER ? 'Logo do Comércio (PNG / JPG)' : 'Foto de Perfil do Motorista (Obrigatório) *'}
+                    </label>
+                    {role === UserRole.DRIVER && !avatar && (
+                      <span className="text-[9px] font-black uppercase text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full">Obrigatório</span>
+                    )}
+                  </div>
+
+                  <div className="flex items-center space-x-4">
+                    {avatar ? (
+                      <div className="relative">
+                        <img src={avatar} alt="Preview" className="w-16 h-16 rounded-2xl object-cover border-2 border-indigo-600 shadow-sm" />
+                        <button
+                          type="button"
+                          onClick={() => setAvatar('')}
+                          className="absolute -top-2 -right-2 w-6 h-6 bg-red-600 text-white rounded-full flex items-center justify-center text-xs font-bold shadow-md hover:scale-110 transition-transform"
+                          title="Remover Imagem"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="w-16 h-16 bg-slate-200 rounded-2xl flex items-center justify-center text-slate-400 text-xl font-bold shrink-0">
+                        <i className={`fas ${role === UserRole.RIDER ? 'fa-store' : 'fa-camera'}`}></i>
+                      </div>
+                    )}
+
+                    <div className="flex-1">
+                      <input
+                        type="file"
+                        accept="image/png, image/jpeg, image/jpg"
+                        id="file-upload"
+                        onChange={handleImageUpload}
+                        className="hidden"
+                      />
+                      <label
+                        htmlFor="file-upload"
+                        className="inline-block px-4 py-2.5 bg-indigo-950 hover:bg-indigo-900 text-white text-xs font-black uppercase rounded-xl cursor-pointer transition-all shadow-md active:scale-95"
+                      >
+                        <i className="fas fa-upload mr-1.5"></i>
+                        {avatar ? 'Alterar Imagem' : 'Carregar PNG/JPG'}
+                      </label>
+                      <p className="text-[10px] text-slate-400 font-medium mt-1">
+                        {role === UserRole.RIDER ? 'Selecione a logomarca da sua empresa em formato PNG ou JPG' : 'Envie uma foto clara do seu rosto em PNG ou JPG'}
+                      </p>
+                    </div>
+                  </div>
+                </div>
               </div>
             )}
 

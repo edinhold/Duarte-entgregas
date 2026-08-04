@@ -1,6 +1,7 @@
 
 import React, { useState } from 'react';
 import { UserRole, UserProfile } from '../types';
+import { auth, googleProvider, signInWithPopup } from '../services/firebase';
 
 interface AdminLoginProps {
   onLogin: (user: UserProfile) => void;
@@ -11,6 +12,7 @@ const AdminLogin: React.FC<AdminLoginProps> = ({ onLogin, onBackToPublic }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
 
   const handleAdminSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -28,6 +30,33 @@ const AdminLogin: React.FC<AdminLoginProps> = ({ onLogin, onBackToPublic }) => {
       });
     } else {
       setError('Credenciais administrativas inválidas.');
+    }
+  };
+
+  const handleGoogleLogin = async () => {
+    setError('');
+    setIsLoading(true);
+    try {
+      const result = await signInWithPopup(auth, googleProvider);
+      if (result.user) {
+        onLogin({
+          id: result.user.uid,
+          name: result.user.displayName || 'Administrador Google',
+          email: result.user.email || '',
+          phone: result.user.phoneNumber || '(00) 00000-0000',
+          role: UserRole.ADMIN,
+          avatar: result.user.photoURL || 'https://picsum.photos/seed/admin/200'
+        });
+      }
+    } catch (err: any) {
+      console.error(err);
+      if (err.code === 'auth/popup-blocked') {
+        setError('O popup de login do Google foi bloqueado pelo navegador. Por favor, permita popups para este site.');
+      } else {
+        setError('Ocorreu um erro ao autenticar com o Google: ' + (err.message || 'Erro desconhecido.'));
+      }
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -86,10 +115,31 @@ const AdminLogin: React.FC<AdminLoginProps> = ({ onLogin, onBackToPublic }) => {
             AUTENTICAR SISTEMA
           </button>
 
+          {/* Divisor */}
+          <div className="relative flex py-2 items-center">
+            <div className="flex-grow border-t border-white/10"></div>
+            <span className="flex-shrink mx-4 text-[9px] font-black uppercase tracking-widest text-indigo-200/30">OU ACESSAR VIA</span>
+            <div className="flex-grow border-t border-white/10"></div>
+          </div>
+
+          <button 
+            type="button"
+            onClick={handleGoogleLogin}
+            disabled={isLoading}
+            className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-5 rounded-[2rem] font-black text-xs uppercase tracking-widest transition-all shadow-xl active:scale-95 flex items-center justify-center gap-3 border border-indigo-400/20 disabled:opacity-50"
+          >
+            {isLoading ? (
+              <span className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></span>
+            ) : (
+              <i className="fab fa-google text-sm"></i>
+            )}
+            {isLoading ? 'CONECTANDO...' : 'ENTRAR COM CONTA GOOGLE'}
+          </button>
+
           <button 
             type="button"
             onClick={onBackToPublic}
-            className="w-full text-indigo-200/50 hover:text-white text-[10px] font-black uppercase tracking-widest transition-colors"
+            className="w-full text-indigo-200/50 hover:text-white text-[10px] font-black uppercase tracking-widest transition-colors pt-2"
           >
             Voltar ao Início
           </button>

@@ -11,6 +11,8 @@ interface LayoutProps {
 }
 
 const Layout: React.FC<LayoutProps> = ({ user, onLogout, children, activeTab, setActiveTab }) => {
+  const [isCollapsed, setIsCollapsed] = React.useState(false);
+
   const getRoleColor = () => {
     switch (user.role) {
       case UserRole.ADMIN: return 'bg-indigo-600';
@@ -24,7 +26,11 @@ const Layout: React.FC<LayoutProps> = ({ user, onLogout, children, activeTab, se
     switch (user.role) {
       case UserRole.ADMIN:
         return [
-          { id: 'home', icon: 'fa-chart-pie', label: 'Dashboard' },
+          { id: 'home', icon: 'fa-chart-pie', label: 'Geral' },
+          { id: 'recharges', icon: 'fa-ticket-alt', label: 'Recargas' },
+          { id: 'push', icon: 'fa-bell', label: 'Push & Alertas' },
+          { id: 'finance', icon: 'fa-wallet', label: 'Finanças' },
+          { id: 'pricing', icon: 'fa-tags', label: 'Tarifas' },
           { id: 'users', icon: 'fa-users', label: 'Usuários' },
           { id: 'rides', icon: 'fa-route', label: 'Corridas' },
           { id: 'settings', icon: 'fa-cog', label: 'Configurações' },
@@ -38,7 +44,7 @@ const Layout: React.FC<LayoutProps> = ({ user, onLogout, children, activeTab, se
         ];
       case UserRole.RIDER:
         return [
-          { id: 'home', icon: 'fa-search', label: 'Pedir Corrida' },
+          { id: 'home', icon: 'fa-paper-plane', label: 'Chamar Motorista' },
           { id: 'history', icon: 'fa-history', label: 'Histórico' },
           { id: 'wallet', icon: 'fa-credit-card', label: 'Pagamento' },
           { id: 'discounts', icon: 'fa-gift', label: 'Descontos' },
@@ -51,38 +57,63 @@ const Layout: React.FC<LayoutProps> = ({ user, onLogout, children, activeTab, se
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col md:flex-row">
       {/* Sidebar - Desktop */}
-      <aside className={`hidden md:flex flex-col w-64 ${getRoleColor()} text-white transition-all duration-300`}>
-        <div className="p-6 flex items-center space-x-3">
-          <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center shadow-lg">
-            <span className="text-indigo-950 font-black text-2xl">D</span>
+      <aside className={`hidden md:flex flex-col ${isCollapsed ? 'w-20' : 'w-64'} ${getRoleColor()} text-white transition-all duration-300`}>
+        <div className={`p-4 flex items-center ${isCollapsed ? 'justify-center flex-col space-y-4' : 'justify-between space-x-3'} border-b border-white/10`}>
+          <div className="flex items-center space-x-3">
+            <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center shadow-lg shrink-0">
+              <span className="text-indigo-950 font-black text-2xl">D</span>
+            </div>
+            {!isCollapsed && (
+              <div className="animate-fade-in select-none">
+                <h1 className="font-bold text-md tracking-tight leading-tight">Duarte Entregas</h1>
+                <p className="text-[10px] opacity-60 uppercase tracking-widest">
+                  {user.role === UserRole.RIDER ? 'LOJISTA' : user.role === UserRole.DRIVER ? 'MOTORISTA' : 'ADMIN'}
+                </p>
+              </div>
+            )}
           </div>
-          <div>
-            <h1 className="font-bold text-lg tracking-tight leading-tight">Duarte Entregas</h1>
-            <p className="text-[10px] opacity-60 uppercase tracking-widest">{user.role}</p>
-          </div>
+          <button 
+            onClick={() => setIsCollapsed(!isCollapsed)} 
+            className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 transition-colors flex items-center justify-center cursor-pointer text-xs"
+            title={isCollapsed ? "Expandir" : "Recolher"}
+          >
+            <i className={`fas ${isCollapsed ? 'fa-chevron-right' : 'fa-chevron-left'}`}></i>
+          </button>
         </div>
 
-        <nav className="flex-1 px-4 mt-6 space-y-1">
+        <nav className="flex-1 px-3 mt-6 space-y-1">
           {getNavLinks().map((link) => (
             <button 
               key={link.id} 
               onClick={() => setActiveTab(link.id)}
-              className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-colors group ${activeTab === link.id ? 'bg-white/20' : 'hover:bg-white/10'}`}
+              className={`w-full flex items-center ${isCollapsed ? 'justify-center px-0' : 'space-x-3 px-4'} py-3 rounded-xl transition-all group ${activeTab === link.id ? 'bg-white/20' : 'hover:bg-white/10'}`}
+              title={link.label}
             >
-              <i className={`fas ${link.icon} ${activeTab === link.id ? 'opacity-100' : 'opacity-60 group-hover:opacity-100'}`}></i>
-              <span className="font-medium">{link.label}</span>
+              <i className={`fas ${link.icon} ${activeTab === link.id ? 'opacity-100' : 'opacity-60 group-hover:opacity-100'} text-lg shrink-0`}></i>
+              {!isCollapsed && <span className="font-medium animate-fade-in whitespace-nowrap text-sm">{link.label}</span>}
             </button>
           ))}
         </nav>
 
         <div className="p-4 border-t border-white/10">
-          <div className="flex items-center space-x-3 p-3 bg-white/5 rounded-2xl">
-            <img src={user.avatar} className="w-10 h-10 rounded-full border-2 border-white/20" alt="" />
-            <div className="flex-1 overflow-hidden">
-              <p className="text-sm font-bold truncate">{user.name}</p>
-              <button onClick={onLogout} className="text-[10px] text-white/50 hover:text-white transition-colors uppercase font-bold">Sair do app</button>
-            </div>
+          <div className={`flex items-center ${isCollapsed ? 'justify-center p-1' : 'space-x-3 p-3'} bg-white/5 rounded-2xl`}>
+            <img src={user.avatar} className="w-10 h-10 rounded-full border-2 border-white/20 shrink-0" alt="" />
+            {!isCollapsed && (
+              <div className="flex-1 overflow-hidden animate-fade-in ms-2">
+                <p className="text-sm font-bold truncate">{user.name}</p>
+                <button onClick={onLogout} className="text-[10px] text-white/50 hover:text-white transition-colors uppercase font-bold text-left block">Sair do app</button>
+              </div>
+            )}
           </div>
+          {isCollapsed && (
+            <button 
+              onClick={onLogout} 
+              className="mt-3 w-10 h-10 mx-auto rounded-xl bg-white/10 hover:bg-red-500 hover:text-white transition-all flex items-center justify-center cursor-pointer text-sm"
+              title="Sair do app"
+            >
+              <i className="fas fa-sign-out-alt"></i>
+            </button>
+          )}
         </div>
       </aside>
 

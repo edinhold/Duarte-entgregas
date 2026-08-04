@@ -1,45 +1,79 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { UserProfile, Ride, UserRole, RideStatus, PaymentSettings, VehicleType, PricingRule, PaymentMethod } from '../types';
+import { UserProfile, Ride, UserRole, RideStatus, PaymentSettings, VehicleType, PricingRule, PaymentMethod, RechargeCode, PushNotificationLog } from '../types';
 import { getAdminBriefing } from '../services/geminiService';
+import RechargeManager from '../components/RechargeManager';
+import PushManager from '../components/PushManager';
 
 interface AdminDashboardProps {
   users: UserProfile[];
   rides: Ride[];
   paymentSettings: PaymentSettings;
+  rechargeCodes: RechargeCode[];
+  pushLogs: PushNotificationLog[];
   onUpdateSettings: (settings: PaymentSettings) => void;
   onUpdateUser: (userId: string, updates: Partial<UserProfile>) => void;
   onDeleteUser: (userId: string) => void;
+  onCreateRechargeCode: (codeData: Omit<RechargeCode, 'id' | 'code' | 'status' | 'createdAt' | 'usedCount' | 'usageLogs'>) => void;
+  onCancelRechargeCode: (codeId: string) => void;
+  onAddPushLog: (log: PushNotificationLog) => void;
+  externalActiveTab?: string;
+  onViewChange?: (view: string) => void;
 }
 
-const AdminDashboard: React.FC<AdminDashboardProps> = ({ users, rides, paymentSettings, onUpdateSettings, onUpdateUser, onDeleteUser }) => {
+const AdminDashboard: React.FC<AdminDashboardProps> = ({ 
+  users, rides, paymentSettings, rechargeCodes, pushLogs,
+  onUpdateSettings, onUpdateUser, onDeleteUser,
+  onCreateRechargeCode, onCancelRechargeCode, onAddPushLog,
+  externalActiveTab, onViewChange
+}) => {
   const [aiBriefing, setAiBriefing] = useState("Analisando operações...");
-  const [view, setView] = useState<'overview' | 'users' | 'rides' | 'pricing' | 'finance' | 'settings'>('overview');
+  const [internalView, setInternalView] = useState<string>('overview');
+  
+  // Derive the active view from the outer Layout tab
+  const view = useMemo(() => {
+    if (!externalActiveTab) return internalView;
+    if (externalActiveTab === 'home') return 'overview';
+    return externalActiveTab;
+  }, [externalActiveTab, internalView]);
+
+  const setView = (v: string) => {
+    if (onViewChange) {
+      onViewChange(v === 'overview' ? 'home' : v);
+    } else {
+      setInternalView(v);
+    }
+  };
   
   // Estados para edição de tarifas
   const [newRule, setNewRule] = useState<Omit<PricingRule, 'id'>>({
     regionName: '', basePrice: 0, pricePerKm: 0, active: true
   });
 
-  // Estados para configuração de API
-  const [apiConfig, setApiConfig] = useState({
-    apiKey: paymentSettings.apiKey,
-    provider: paymentSettings.provider,
-    platformCommission: paymentSettings.platformCommission
+  // Estados para configuração de API & Financeira
+  const [finConfig, setFinConfig] = useState({
+    apiKey: paymentSettings.apiKey || '',
+    provider: paymentSettings.provider || 'Stripe',
+    platformCommission: paymentSettings.platformCommission ?? 15,
+    minimumRideFee: paymentSettings.minimumRideFee ?? 6.00,
+    fixedBaseFee: paymentSettings.fixedBaseFee ?? 3.00,
+    pricePerKm: paymentSettings.pricePerKm ?? 2.00,
+    pricePerMinute: paymentSettings.pricePerMinute ?? 0.30,
+    bonusPerRide: paymentSettings.bonusPerRide ?? 0.00,
+    driverRadiusKm: paymentSettings.driverRadiusKm ?? 10
   });
 
-  const getUserById = (id?: string) => users.find(u => u.id === id);
+  const merchants = useMemo(() => users.filter(u => u.role === UserRole.RIDER), [users]);
+  const drivers = useMemo(() => users.filter(u => u.role === UserRole.DRIVER), [users]);
 
   // Estatísticas de Usuários
   const userStats = useMemo(() => {
-    const riders = users.filter(u => u.role === UserRole.RIDER).length;
-    const drivers = users.filter(u => u.role === UserRole.DRIVER).length;
-    return { riders, drivers, total: users.length };
-  }, [users]);
+    return { riders: merchants.length, drivers: drivers.length, total: users.length };
+  }, [merchants, drivers, users]);
 
   // Estatísticas Financeiras detalhadas por Motorista
   const driversFinance = useMemo(() => {
-    return users.filter(u => u.role === UserRole.DRIVER).map(driver => {
+    return drivers.map(driver => {
       const driverRides = rides.filter(r => r.driverId === driver.id && r.status === RideStatus.COMPLETED);
       const totalBruto = driverRides.reduce((acc, r) => acc + r.price, 0);
       const comissaoTotal = totalBruto * (paymentSettings.platformCommission / 100);
@@ -55,7 +89,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ users, rides, paymentSe
         avatar: driver.avatar
       };
     });
-  }, [users, rides, paymentSettings.platformCommission]);
+  }, [drivers, rides, paymentSettings.platformCommission]);
 
   const completedRides = useMemo(() => rides.filter(r => r.status === RideStatus.COMPLETED), [rides]);
   const totalRevenue = completedRides.reduce((acc, r) => acc + r.price, 0);
@@ -88,11 +122,17 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ users, rides, paymentSe
     e.preventDefault();
     onUpdateSettings({
       ...paymentSettings,
-      apiKey: apiConfig.apiKey,
-      provider: apiConfig.provider,
-      platformCommission: apiConfig.platformCommission
+      apiKey: finConfig.apiKey,
+      provider: finConfig.provider,
+      platformCommission: finConfig.platformCommission,
+      minimumRideFee: finConfig.minimumRideFee,
+      fixedBaseFee: finConfig.fixedBaseFee,
+      pricePerKm: finConfig.pricePerKm,
+      pricePerMinute: finConfig.pricePerMinute,
+      bonusPerRide: finConfig.bonusPerRide,
+      driverRadiusKm: finConfig.driverRadiusKm
     });
-    alert("Configurações de pagamento e API salvas com sucesso!");
+    alert("Configurações financeiras e operacionais salvas com sucesso!");
   };
 
   const handleDeleteRule = (id: string) => {
@@ -104,7 +144,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ users, rides, paymentSe
     }
   };
 
-  // Fix: Added missing confirmDeleteUser function to handle user deletion with a prompt
   const confirmDeleteUser = (id: string) => {
     if (window.confirm("Deseja realmente excluir este usuário? Esta ação não pode ser desfeita.")) {
       onDeleteUser(id);
@@ -113,28 +152,10 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ users, rides, paymentSe
 
   return (
     <div className="space-y-8 animate-fade-in pb-12">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-200/60 pb-6">
         <div>
           <h2 className="text-3xl font-black text-slate-900 tracking-tighter">Portal do Administrador</h2>
-          <p className="text-slate-500 font-medium">Gestão financeira e operacional da Duarte.</p>
-        </div>
-        <div className="flex bg-white p-1.5 rounded-2xl shadow-sm border border-slate-200 overflow-x-auto no-scrollbar">
-          {[
-            { id: 'overview', label: 'Geral', icon: 'fa-home' },
-            { id: 'finance', label: 'Finanças', icon: 'fa-wallet' },
-            { id: 'pricing', label: 'Tarifas', icon: 'fa-tags' },
-            { id: 'users', label: 'Usuários', icon: 'fa-users' },
-            { id: 'settings', label: 'Configurações', icon: 'fa-cog' }
-          ].map(v => (
-            <button 
-              key={v.id}
-              onClick={() => setView(v.id as any)}
-              className={`px-4 py-2 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all shrink-0 flex items-center space-x-2 ${view === v.id ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-500 hover:bg-slate-50'}`}
-            >
-              <i className={`fas ${v.icon}`}></i>
-              <span>{v.label}</span>
-            </button>
-          ))}
+          <p className="text-slate-500 font-medium">Gestão de recargas, entregas, motoristas e finanças Duarte Delivery.</p>
         </div>
       </div>
 
@@ -144,24 +165,49 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ users, rides, paymentSe
             <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-200">
               <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest">Lucro Plataforma</p>
               <h3 className="text-2xl font-black text-indigo-600 mt-1">R$ {platformEarnings.toFixed(2)}</h3>
-              <p className="text-slate-400 text-[9px] font-bold mt-2">Taxa ativa: {paymentSettings.platformCommission}%</p>
+              <p className="text-slate-400 text-[9px] font-bold mt-2">Comissão ativa: {paymentSettings.platformCommission}%</p>
             </div>
             <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-200">
               <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest">Volume Bruto</p>
               <h3 className="text-2xl font-black text-slate-900 mt-1">R$ {totalRevenue.toFixed(2)}</h3>
-              <p className="text-slate-400 text-[9px] font-bold mt-2">{completedRides.length} viagens concluídas</p>
+              <p className="text-slate-400 text-[9px] font-bold mt-2">{completedRides.length} entregas concluídas</p>
             </div>
             <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-200">
               <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest">Motoristas Ativos</p>
               <h3 className="text-2xl font-black text-slate-900 mt-1">{userStats.drivers}</h3>
-              <p className="text-slate-400 text-[9px] font-bold mt-2">Prontos para serviço</p>
+              <p className="text-slate-400 text-[9px] font-bold mt-2">Raio de alerta: {paymentSettings.driverRadiusKm || 10} km</p>
+            </div>
+            <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-200">
+              <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest">Lojistas Cadastrados</p>
+              <h3 className="text-2xl font-black text-indigo-950 mt-1">{userStats.riders}</h3>
+              <p className="text-slate-400 text-[9px] font-bold mt-2">{rechargeCodes.filter(c => c.status === 'ACTIVE').length} vouchers ativos</p>
             </div>
           </div>
+
           <div className="bg-indigo-600 rounded-[2rem] p-8 text-white shadow-xl flex items-center space-x-6">
-            <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center backdrop-blur-md"><i className="fas fa-robot"></i></div>
-            <p className="font-medium opacity-90">{aiBriefing}</p>
+            <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center backdrop-blur-md shrink-0">
+              <i className="fas fa-robot text-xl"></i>
+            </div>
+            <p className="font-medium opacity-90 leading-relaxed text-sm">{aiBriefing}</p>
           </div>
         </>
+      )}
+
+      {view === 'recharges' && (
+        <RechargeManager
+          rechargeCodes={rechargeCodes}
+          merchants={merchants}
+          onCreateCode={onCreateRechargeCode}
+          onCancelCode={onCancelRechargeCode}
+        />
+      )}
+
+      {view === 'notifications' && (
+        <PushManager
+          pushLogs={pushLogs}
+          drivers={drivers}
+          onAddPushLog={onAddPushLog}
+        />
       )}
 
       {view === 'finance' && (
@@ -278,42 +324,71 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ users, rides, paymentSe
       )}
 
       {view === 'settings' && (
-        <div className="max-w-2xl mx-auto animate-slide-up">
+        <div className="max-w-3xl mx-auto animate-slide-up">
           <form onSubmit={handleSaveSettings} className="bg-white p-10 rounded-[2.5rem] border border-slate-200 shadow-xl space-y-8">
             <div className="text-center">
               <div className="w-16 h-16 bg-indigo-50 rounded-2xl mx-auto mb-4 flex items-center justify-center text-indigo-950">
-                <i className="fas fa-shield-alt text-2xl"></i>
+                <i className="fas fa-sliders-h text-2xl"></i>
               </div>
-              <h3 className="text-xl font-black text-indigo-950 uppercase tracking-tight">Configurações de Gateway</h3>
-              <p className="text-slate-400 text-sm font-medium">Configure sua API para liberar pagamentos in-app.</p>
+              <h3 className="text-xl font-black text-indigo-950 uppercase tracking-tight">Configurações Financeiras & Operacionais</h3>
+              <p className="text-slate-400 text-sm font-medium">Defina comissões, taxas por km/tempo e raio de alerta para motoristas online.</p>
             </div>
 
             <div className="space-y-6">
-               <div className="space-y-2">
-                 <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Provedor de Pagamento</label>
-                 <select value={apiConfig.provider} onChange={e => setApiConfig({...apiConfig, provider: e.target.value as any})} className="w-full px-6 py-4 bg-slate-50 border-2 border-transparent focus:border-indigo-600 rounded-2xl outline-none font-bold text-slate-700">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Valor Mínimo da Corrida (R$)</label>
+                  <input type="number" step="0.5" value={finConfig.minimumRideFee} onChange={e => setFinConfig({...finConfig, minimumRideFee: parseFloat(e.target.value) || 0})} className="w-full px-6 py-4 bg-slate-50 border-2 border-transparent focus:border-indigo-600 rounded-2xl outline-none font-bold text-slate-800" />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Comissão da Plataforma (%)</label>
+                  <div className="relative">
+                    <input type="number" step="1" value={finConfig.platformCommission} onChange={e => setFinConfig({...finConfig, platformCommission: parseFloat(e.target.value) || 0})} className="w-full px-6 py-4 bg-slate-50 border-2 border-transparent focus:border-indigo-600 rounded-2xl outline-none font-bold text-slate-800" />
+                    <span className="absolute right-6 top-1/2 -translate-y-1/2 font-black text-slate-300">%</span>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Taxa Fixa Base (R$)</label>
+                  <input type="number" step="0.5" value={finConfig.fixedBaseFee} onChange={e => setFinConfig({...finConfig, fixedBaseFee: parseFloat(e.target.value) || 0})} className="w-full px-6 py-4 bg-slate-50 border-2 border-transparent focus:border-indigo-600 rounded-2xl outline-none font-bold text-slate-800" />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Taxa por Quilômetro (R$/km)</label>
+                  <input type="number" step="0.10" value={finConfig.pricePerKm} onChange={e => setFinConfig({...finConfig, pricePerKm: parseFloat(e.target.value) || 0})} className="w-full px-6 py-4 bg-slate-50 border-2 border-transparent focus:border-indigo-600 rounded-2xl outline-none font-bold text-slate-800" />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Taxa por Tempo (R$/min)</label>
+                  <input type="number" step="0.05" value={finConfig.pricePerMinute} onChange={e => setFinConfig({...finConfig, pricePerMinute: parseFloat(e.target.value) || 0})} className="w-full px-6 py-4 bg-slate-50 border-2 border-transparent focus:border-indigo-600 rounded-2xl outline-none font-bold text-slate-800" />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Raio para Alerta de Motoristas Online (km)</label>
+                  <select value={finConfig.driverRadiusKm} onChange={e => setFinConfig({...finConfig, driverRadiusKm: parseInt(e.target.value) || 10})} className="w-full px-6 py-4 bg-slate-50 border-2 border-transparent focus:border-indigo-600 rounded-2xl outline-none font-bold text-slate-800">
+                    <option value={2}>2 km (Urbano Denso)</option>
+                    <option value={5}>5 km (Bairro)</option>
+                    <option value={10}>10 km (Cidade Geral)</option>
+                    <option value={20}>20 km (Região Metropolitana)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="space-y-2 pt-4 border-t border-slate-100">
+                <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Gateway Provedor de Pagamentos</label>
+                <div className="grid grid-cols-2 gap-4">
+                  <select value={finConfig.provider} onChange={e => setFinConfig({...finConfig, provider: e.target.value as any})} className="px-6 py-4 bg-slate-50 border-2 border-transparent focus:border-indigo-600 rounded-2xl outline-none font-bold text-slate-700">
                     <option value="Stripe">Stripe Payments</option>
                     <option value="MercadoPago">Mercado Pago</option>
                     <option value="PayPal">PayPal Business</option>
-                 </select>
-               </div>
-
-               <div className="space-y-2">
-                 <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Chave Secreta da API (API KEY) *</label>
-                 <input required type="password" value={apiConfig.apiKey} onChange={e => setApiConfig({...apiConfig, apiKey: e.target.value})} className="w-full px-6 py-4 bg-slate-50 border-2 border-transparent focus:border-indigo-600 rounded-2xl outline-none font-bold" placeholder="sk_test_••••••••••••••••" />
-                 <p className="text-[9px] text-indigo-400 font-bold uppercase mt-1">A carteira do usuário será habilitada após salvar uma chave válida.</p>
-               </div>
-
-               <div className="space-y-2">
-                 <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Comissão da Plataforma (%)</label>
-                 <div className="relative">
-                    <input type="number" value={apiConfig.platformCommission} onChange={e => setApiConfig({...apiConfig, platformCommission: parseFloat(e.target.value)})} className="w-full px-6 py-4 bg-slate-50 border-2 border-transparent focus:border-indigo-600 rounded-2xl outline-none font-bold" />
-                    <span className="absolute right-6 top-1/2 -translate-y-1/2 font-black text-slate-300">%</span>
-                 </div>
-               </div>
+                  </select>
+                  <input type="password" value={finConfig.apiKey} onChange={e => setFinConfig({...finConfig, apiKey: e.target.value})} className="px-6 py-4 bg-slate-50 border-2 border-transparent focus:border-indigo-600 rounded-2xl outline-none font-bold" placeholder="Chave Secreta API Key..." />
+                </div>
+              </div>
             </div>
 
-            <button type="submit" className="w-full bg-indigo-950 text-white py-6 rounded-[2rem] font-black text-lg shadow-2xl hover:bg-indigo-900 transition-all active:scale-95">SALVAR CONFIGURAÇÕES</button>
+            <button type="submit" className="w-full bg-indigo-950 text-white py-6 rounded-[2rem] font-black text-lg shadow-2xl hover:bg-indigo-900 transition-all active:scale-95">SALVAR CONFIGURAÇÕES OPERACIONAIS</button>
           </form>
         </div>
       )}
@@ -344,7 +419,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ users, rides, paymentSe
                       <td className="px-6 py-4 text-slate-500 font-medium">{u.phone}</td>
                       <td className="px-6 py-4">
                          <span className={`px-3 py-1 rounded-full text-[8px] font-black uppercase ${u.role === UserRole.DRIVER ? 'bg-amber-100 text-amber-600' : 'bg-blue-100 text-blue-600'}`}>
-                           {u.role === UserRole.DRIVER ? 'Motorista' : u.role === UserRole.RIDER ? 'Passageiro' : 'Admin'}
+                           {u.role === UserRole.DRIVER ? 'Motorista' : u.role === UserRole.RIDER ? 'Lojista' : 'Admin'}
                          </span>
                       </td>
                       <td className="px-6 py-4">
@@ -364,8 +439,72 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ users, rides, paymentSe
             </div>
         </div>
       )}
+
+      {view === 'rides' && (
+        <div className="bg-white rounded-[2rem] border border-slate-200 overflow-hidden shadow-sm animate-slide-up">
+          <div className="p-6 border-b border-slate-100 bg-slate-50/50">
+            <h4 className="font-black text-indigo-950 uppercase text-xs tracking-widest">Histórico de Corridas & Entregas</h4>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left">
+              <thead className="text-[10px] font-black text-slate-400 uppercase tracking-widest bg-slate-50/50">
+                <tr>
+                  <th className="px-6 py-4">ID & Produto</th>
+                  <th className="px-6 py-4">Lojista / Motorista</th>
+                  <th className="px-6 py-4">Origem / Destino</th>
+                  <th className="px-6 py-4">Valor Lojista</th>
+                  <th className="px-6 py-4">Líquido Motorista</th>
+                  <th className="px-6 py-4">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 text-sm">
+                {rides.map(r => (
+                  <tr key={r.id} className="hover:bg-slate-50 transition-colors">
+                    <td className="px-6 py-4">
+                      <span className="font-mono text-xs font-bold text-slate-400 block">{r.id}</span>
+                      <span className="font-black text-indigo-950 text-xs">{r.productName || 'Entrega'}</span>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="space-y-1">
+                        <p className="font-bold text-slate-700">🏪 {users.find(u => u.id === r.riderId)?.name || 'Lojista'}</p>
+                        <p className="text-xs text-slate-400">🛵 {r.driverId ? (users.find(u => u.id === r.driverId)?.name || 'Motorista') : 'Não atribuído'}</p>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="text-xs text-slate-600">
+                        <p><strong>De:</strong> {r.origin.address}</p>
+                        <p><strong>Para:</strong> {r.destination.address}</p>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 font-black text-indigo-950">R$ {r.price.toFixed(2)}</td>
+                    <td className="px-6 py-4 font-black text-emerald-600">R$ {(r.driverEarnings || (r.price * 0.85)).toFixed(2)}</td>
+                    <td className="px-6 py-4">
+                      <span className={`px-2 py-1 rounded-full text-[8.5px] font-black uppercase ${
+                        r.status === 'COMPLETED' ? 'bg-green-100 text-green-700' :
+                        r.status === 'CANCELLED' ? 'bg-red-100 text-red-700' :
+                        r.status === 'REQUESTED' ? 'bg-blue-100 text-blue-700' :
+                        'bg-amber-100 text-amber-700'
+                      }`}>
+                        {r.status}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+                {rides.length === 0 && (
+                  <tr>
+                    <td colSpan={6} className="p-16 text-center text-slate-400 font-bold italic">
+                      Nenhuma corrida registrada no sistema.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
 
 export default AdminDashboard;
+

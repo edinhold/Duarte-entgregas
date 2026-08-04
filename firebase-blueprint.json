@@ -1,0 +1,24 @@
+{
+  "entities": {
+    "users": {
+      "title": "UserProfile",
+      "description": "User profile in the application",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "phone": { "type": "string" },
+        "role": { "type": "string", "enum": ["ADMIN", "DRIVER", "RIDER"] },
+        "avatar": { "type": "string" }
+      },
+      "required": ["id", "name", "email", "role"]
+    }
+  },
+  "firestore": {
+    "users/{userId}": {
+      "schema": "users",
+      "description": "Collection of user profiles"
+    }
+  }
+}
